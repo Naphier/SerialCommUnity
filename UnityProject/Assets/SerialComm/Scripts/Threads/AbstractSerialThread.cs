@@ -1,4 +1,4 @@
-﻿/**
+/**
  * SerialCommUnity (Serial Communication for Unity)
  * Author: Daniel Wilches <dwilches@gmail.com>
  *
@@ -23,24 +23,33 @@ using System.Threading;
  */
 public abstract class AbstractSerialThread
 {
-    // Parameters passed from SerialController, used for connecting to the
-    // serial device as explained in the SerialController documentation.
-    private string portName;
+	// Constants used to mark the start and end of a connection. There is no
+	// way you can generate clashing messages from your serial device, as I
+	// compare the references of these strings, no their contents. So if you
+	// send these same strings from the serial device, upon reconstruction they
+	// will have different reference ids.
+	public const string SERIAL_DEVICE_CONNECTED = "__Connected__";
+	public const string SERIAL_DEVICE_DISCONNECTED = "__Disconnected__";
+
+
+	// Parameters passed from SerialController, used for connecting to the
+	// serial device as explained in the SerialController documentation.
+	private string portName;
     private int baudRate;
     private int delayBeforeReconnecting;
     private int maxUnreadMessages;
+	private Parity parity = Parity.None;
+	private StopBits stopBits = StopBits.One;
+	private int dataBits = 8;
+	private int readTimeout = 100;
+	private int writeTimeout = 100;
+	private object newestIncomingMessage = null;
+	private object newestOutgoingMessage = null;
+	private int outgoingMessagePause;
+	private bool sendOnlyNewest = false;
 
-    // Object from the .Net framework used to communicate with serial devices.
-    private SerialPort serialPort;
-
-    // Amount of milliseconds alloted to a single read or connect. An
-    // exception is thrown when such operations take more than this time
-    // to complete.
-    private const int readTimeout = 100;
-
-    // Amount of milliseconds alloted to a single write. An exception is thrown
-    // when such operations take more than this time to complete.
-    private const int writeTimeout = 100;
+	// Object from the .Net framework used to communicate with serial devices.
+	private SerialPort serialPort;
 
     // Internal synchronized queues used to send and receive messages from the
     // serial device. They serve as the point of communication between the
@@ -53,6 +62,18 @@ public abstract class AbstractSerialThread
 
     private bool enqueueStatusMessages = false;
 
+	public bool IsOpen
+	{
+		get
+		{
+			if (serialPort == null)
+				return false;
+			else
+				return serialPort.IsOpen;
+		}
+	}
+
+	private Thread thread;
 
     /**************************************************************************
      * Methods intended to be invoked from the Unity thread.
@@ -66,7 +87,14 @@ public abstract class AbstractSerialThread
                                 int baudRate,
                                 int delayBeforeReconnecting,
                                 int maxUnreadMessages,
-                                bool enqueueStatusMessages)
+                                bool enqueueStatusMessages, 
+								Parity parity = Parity.None,
+								StopBits stopBits = StopBits.One, 
+								int dataBits = 8, 
+								int readTimeout = 100,
+								int writeTimeout = 100, 
+								int outgoingMessagePause = 1, 
+								bool sendOnlyNewest = false)
     {
         this.portName = portName;
         this.baudRate = baudRate;
@@ -74,33 +102,74 @@ public abstract class AbstractSerialThread
         this.maxUnreadMessages = maxUnreadMessages;
         this.enqueueStatusMessages = enqueueStatusMessages;
 
-        inputQueue = Queue.Synchronized(new Queue());
-        outputQueue = Queue.Synchronized(new Queue());
+		this.parity = parity;
+		this.stopBits = stopBits;
+		this.dataBits = dataBits;
+		this.readTimeout = readTimeout;
+		this.writeTimeout = writeTimeout;
+		this.outgoingMessagePause = outgoingMessagePause;
+		this.sendOnlyNewest = sendOnlyNewest;
+		Init();
     }
+
+
+	public AbstractSerialThread(SerialPort serialPort, 
+								int delayBeforeReconnecting = 1000, 
+								int maxUnreadMessages = 1, 
+								bool enqueueStatusMessages = true)
+	{
+		this.serialPort = serialPort;
+		portName = serialPort.PortName;
+		baudRate = serialPort.BaudRate;
+		parity = serialPort.Parity;
+		stopBits = serialPort.StopBits;
+		dataBits = serialPort.DataBits;
+		readTimeout = serialPort.ReadTimeout;
+		writeTimeout = serialPort.WriteTimeout;
+
+		this.delayBeforeReconnecting = delayBeforeReconnecting;
+		this.maxUnreadMessages = maxUnreadMessages;
+		this.enqueueStatusMessages = enqueueStatusMessages;
+
+		Init();
+	}
+
+
+	private void Init()
+	{
+		thread = new Thread(new ThreadStart(RunForever));
+		inputQueue = Queue.Synchronized(new Queue());
+		outputQueue = Queue.Synchronized(new Queue());
+	}
 
     // ------------------------------------------------------------------------
     // Invoked to indicate to this thread object that it should stop.
     // ------------------------------------------------------------------------
-    public void RequestStop()
-    {
-        lock (this)
-        {
-            stopRequested = true;
-        }
-    }
+	public void ShutDown()
+	{
+		lock (this)
+		{
+			stopRequested = true;
+		}
+	}
 
-    // ------------------------------------------------------------------------
-    // Polls the internal message queue returning the next available message
-    // in a generic form. This can be invoked by subclasses to change the
-    // type of the returned object.
-    // It returns null if no message has arrived since the latest invocation.
-    // ------------------------------------------------------------------------
-    public object ReadMessage()
-    {
-        if (inputQueue.Count == 0)
-            return null;
+	// ------------------------------------------------------------------------
+	// Polls the internal message queue returning the next available message
+	// in a generic form. This can be invoked by subclasses to change the
+	// type of the returned object.
+	// It returns null if no message has arrived since the latest invocation.
+	// ------------------------------------------------------------------------
+	public object ReadMessage()
+	{
+		if (maxUnreadMessages > 0)
+		{
+			if (inputQueue.Count == 0)
+				return null;
 
-        return inputQueue.Dequeue();
+			return inputQueue.Dequeue();
+		}
+		else
+			return newestIncomingMessage;
     }
 
     // ------------------------------------------------------------------------
@@ -110,9 +179,9 @@ public abstract class AbstractSerialThread
     // ------------------------------------------------------------------------
     public void SendMessage(object message)
     {
+		newestOutgoingMessage = message;
         outputQueue.Enqueue(message);
     }
-
 
     /**************************************************************************
      * Methods intended to be invoked from the SerialComm thread (the one
@@ -136,10 +205,14 @@ public abstract class AbstractSerialThread
                 {
                     AttemptConnection();
 
-                    // Enter the semi-infinite loop of reading/writing to the
-                    // device.
-                    while (!IsStopRequested())
-                        RunOnce();
+					// Enter the semi-infinite loop of reading/writing to the
+					// device.
+					while (!IsStopRequested())
+					{
+						RunOnce();
+						if (outgoingMessagePause > 0)
+							Thread.Sleep(outgoingMessagePause);
+					}
                 }
                 catch (Exception ioe)
                 {
@@ -148,7 +221,7 @@ public abstract class AbstractSerialThread
                     // to the console and notify the listener.
                     Debug.LogWarning("Exception: " + ioe.Message + " StackTrace: " + ioe.StackTrace);
                     if (enqueueStatusMessages)
-                        inputQueue.Enqueue(SerialController.SERIAL_DEVICE_DISCONNECTED);
+                        inputQueue.Enqueue(SERIAL_DEVICE_DISCONNECTED);
 
                     // As I don't know in which stage the SerialPort threw the
                     // exception I call this method that is very safe in
@@ -163,35 +236,75 @@ public abstract class AbstractSerialThread
                 }
             }
 
-            // Before closing the COM port, give the opportunity for all messages
-            // from the output queue to reach the other endpoint.
-            while (outputQueue.Count != 0)
-            {
-                SendToWire(outputQueue.Dequeue(), serialPort);
-            }
-
+			// Before closing the COM port, give the opportunity for all messages
+			// from the output queue to reach the other endpoint.
+			if (sendOnlyNewest && serialPort != null && newestOutgoingMessage != null)
+			{
+				SendToWire(newestOutgoingMessage, serialPort);
+				newestOutgoingMessage = null;
+			}
+			else
+			{
+				while (outputQueue.Count != 0 && serialPort != null)
+				{
+					SendToWire(outputQueue.Dequeue(), serialPort);
+				}
+			}
             // Attempt to do a final cleanup. This method doesn't fail even if
             // the port is in an invalid status.
             CloseDevice();
         }
         catch (Exception e)
         {
-            Debug.LogError("Unknown exception: " + e.Message + " " + e.StackTrace);
+            Debug.LogError("Unknown exception: " + e.Message + "\n" + e.StackTrace);
         }
-    }
+
+		if (thread != null)
+		{
+			thread.Join();
+			thread = null;
+		}
+	}
 
     // ------------------------------------------------------------------------
     // Try to connect to the serial device. May throw IO exceptions.
     // ------------------------------------------------------------------------
     private void AttemptConnection()
     {
-        serialPort = new SerialPort(portName, baudRate);
-        serialPort.ReadTimeout = readTimeout;
-        serialPort.WriteTimeout = writeTimeout;
-        serialPort.Open();
+		portName = portName.ToUpperInvariant();
+		if (!portName.Contains("COM"))
+		{
+			Debug.LogError("Invlid port name. Should be in the format of 'COM10'. Portname entered: '" + portName + "'");
+			return;
+		}
 
-        if (enqueueStatusMessages)
-            inputQueue.Enqueue(SerialController.SERIAL_DEVICE_CONNECTED);
+		if (portName.Length > 4) // handle com ports > 9
+		{
+			portName = @"\\.\" + portName;
+		}
+
+		try
+		{
+			serialPort = new SerialPort()
+			{
+				PortName = portName,
+				BaudRate = baudRate,
+				ReadTimeout = readTimeout,
+				WriteTimeout = writeTimeout,
+				Parity = parity,
+				StopBits = stopBits,
+				DataBits = dataBits
+			};
+
+			serialPort.Open();
+
+			if (enqueueStatusMessages)
+				inputQueue.Enqueue(SERIAL_DEVICE_CONNECTED);
+		}
+		catch (IOException ex)
+		{
+			Debug.LogError("Failed opening port. Exception: " + ex.Message + "\n" + ex.StackTrace);
+		}
     }
 
     // ------------------------------------------------------------------------
@@ -205,6 +318,7 @@ public abstract class AbstractSerialThread
         try
         {
             serialPort.Close();
+			serialPort.Dispose();
         }
         catch (IOException)
         {
@@ -237,7 +351,12 @@ public abstract class AbstractSerialThread
         try
         {
             // Send a message.
-            if (outputQueue.Count != 0)
+			if (sendOnlyNewest && newestOutgoingMessage != null)
+			{
+				SendToWire(newestOutgoingMessage, serialPort);
+				newestOutgoingMessage = null;
+			}
+			else if (outputQueue.Count != 0)
             {
                 SendToWire(outputQueue.Dequeue(), serialPort);
             }
@@ -247,16 +366,23 @@ public abstract class AbstractSerialThread
             // this line so it eventually reaches the Message Listener.
             // Otherwise, discard the line.
             object inputMessage = ReadFromWire(serialPort);
-            if (inputMessage != null)
-            {
-                if (inputQueue.Count < maxUnreadMessages)
-                {
-                    inputQueue.Enqueue(inputMessage);
-                }
-                else
-                {
-                    Debug.LogWarning("Queue is full. Dropping message: " + inputMessage);
-                }
+			if (inputMessage != null)
+			{
+				if (maxUnreadMessages > 0)
+				{
+					if (inputQueue.Count < maxUnreadMessages)
+					{
+						inputQueue.Enqueue(inputMessage);
+					}
+					else
+					{
+						Debug.LogWarning("Queue is full. Dropping message: " + inputMessage);
+					}
+				}
+				else
+				{
+					newestIncomingMessage = inputMessage;
+				}
             }
         }
         catch (TimeoutException)
@@ -265,10 +391,11 @@ public abstract class AbstractSerialThread
         }
     }
 
-    // ------------------------------------------------------------------------
-    // Sends a message through the serialPort.
-    // ------------------------------------------------------------------------
-    protected abstract void SendToWire(object message, SerialPort serialPort);
+	
+	// ------------------------------------------------------------------------
+	// Sends a message through the serialPort.
+	// ------------------------------------------------------------------------
+	protected abstract void SendToWire(object message, SerialPort serialPort);
 
     // ------------------------------------------------------------------------
     // Reads and returns a message from the serial port.

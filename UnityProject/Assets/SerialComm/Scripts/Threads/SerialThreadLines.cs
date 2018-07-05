@@ -6,8 +6,6 @@
  * https://creativecommons.org/licenses/by/2.0/
  */
 
-using UnityEngine;
-
 using System.IO.Ports;
 
 /**
