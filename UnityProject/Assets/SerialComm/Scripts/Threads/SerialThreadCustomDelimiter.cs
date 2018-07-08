@@ -19,57 +19,67 @@ using System.IO.Ports;
  * 
  * For method comments, refer to the base class.
  */
-public class SerialThreadBinaryDelimited : AbstractSerialThread
+namespace UnitySerialPort
 {
-    // Messages to/from the serial port should be delimited using this separator.
-    private byte separator;
-    // Buffer where a single message must fit
-    private byte[] buffer = new byte[1024];
-    private int bufferUsed = 0;
-    
-    public SerialThreadBinaryDelimited(string portName,
-                                       int baudRate,
-                                       int delayBeforeReconnecting,
-                                       int maxUnreadMessages,
-                                       byte separator)
-        : base(portName, baudRate, delayBeforeReconnecting, maxUnreadMessages, false)
-    {
-        this.separator = separator;
-    }
+	public class SerialThreadBinaryDelimited : AbstractSerialThread
+	{
+		// Messages to/from the serial port should be delimited using this separator.
+		private byte separator;
+		// Buffer where a single message must fit
+		private byte[] buffer = new byte[1024];
+		private int bufferUsed = 0;
 
-    // ------------------------------------------------------------------------
-    // Must include the separator already (as it shold have been passed to
-    // the SendMessage method).
-    // ------------------------------------------------------------------------
-    protected override void SendToWire(object message, SerialPort serialPort)
-    {
-        byte[] binaryMessage = (byte[])message;
-        serialPort.Write(binaryMessage, 0, binaryMessage.Length);
-    }
+		public SerialThreadBinaryDelimited(SerialPort serialPort, ObjectDelegate onMessageReceived, 
+			VoidDelegate onConnected, VoidDelegate onDisconnected, StringDelegate onError, 
+			byte separator,
+			VoidDelegate onPreShutDown = null, int delayBeforeReconnecting = 1000, 
+			int maxUnreadMessages = 0, int outgoingMessagePause = 0, bool sendOnlyNewest = false, 
+			bool manuallyPollMessages = false) 
+			: 
+			base(serialPort, onMessageReceived, onConnected, onDisconnected, onError, 
+				onPreShutDown, delayBeforeReconnecting, maxUnreadMessages, outgoingMessagePause, 
+				sendOnlyNewest, manuallyPollMessages)
+		{
+			this.separator = separator;
+		}
 
-    protected override object ReadFromWire(SerialPort serialPort)
-    {
-        // Try to fill the internal buffer
-        bufferUsed += serialPort.Read(buffer, bufferUsed, buffer.Length - bufferUsed);
 
-        // Search for the separator in the buffer
-        int index = System.Array.FindIndex<byte>(buffer, 0, bufferUsed, IsSeparator);
-        if (index == -1)
-            return null;
 
-        byte[] returnBuffer = new byte[index];
-        System.Array.Copy(buffer, returnBuffer, index);
 
-        // Shift the buffer so next time the unused bytes start at 0 (safe even
-        // if there is overlap)
-        System.Array.Copy(buffer, index + 1, buffer, 0, bufferUsed - index);
-        bufferUsed -= index + 1;
+		// ------------------------------------------------------------------------
+		// Must include the separator already (as it shold have been passed to
+		// the SendMessage method).
+		// ------------------------------------------------------------------------
+		protected override void SendToWire(object message, SerialPort serialPort)
+		{
+			byte[] binaryMessage = (byte[])message;
+			serialPort.Write(binaryMessage, 0, binaryMessage.Length);
+		}
 
-        return returnBuffer;
-    }
+		protected override object ReadFromWire(SerialPort serialPort)
+		{
+			// Try to fill the internal buffer
+			bufferUsed += serialPort.Read(buffer, bufferUsed, buffer.Length - bufferUsed);
 
-    private bool IsSeparator(byte aByte)
-    {
-        return aByte == separator;
-    }
+			// Search for the separator in the buffer
+			int index = System.Array.FindIndex<byte>(buffer, 0, bufferUsed, IsSeparator);
+			if (index == -1)
+				return null;
+
+			byte[] returnBuffer = new byte[index];
+			System.Array.Copy(buffer, returnBuffer, index);
+
+			// Shift the buffer so next time the unused bytes start at 0 (safe even
+			// if there is overlap)
+			System.Array.Copy(buffer, index + 1, buffer, 0, bufferUsed - index);
+			bufferUsed -= index + 1;
+
+			return returnBuffer;
+		}
+
+		private bool IsSeparator(byte aByte)
+		{
+			return aByte == separator;
+		}
+	}
 }

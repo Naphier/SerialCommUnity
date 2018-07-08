@@ -1,14 +1,14 @@
 /**
  * SerialCommUnity (Serial Communication for Unity)
  * Author: Daniel Wilches <dwilches@gmail.com>
- *
+ * Heavy modifications by Sean Mann (naplandgames@gmail.com)
  * This work is released under the Creative Commons Attributions license.
  * https://creativecommons.org/licenses/by/2.0/
  */
 
 using UnityEngine;
-using System.Threading;
 using UnityEngine.Events;
+using UnitySerialPort;
 
 /**
  * This class allows a Unity program to continually check for messages from a
@@ -49,16 +49,17 @@ public class SerialController : MonoBehaviour
 	[SerializeField]
 	protected int maxUnreadMessages = 0;
 
-	public UnityEvent OnConnected = null;
-	public UnityEvent OnDisconnected = null;
+	public UnityEvent OnConnected = new UnityEvent();
+	public UnityEvent OnDisconnected = new UnityEvent();
 	public class UnityStringEvent : UnityEvent<string> { }
-	public UnityStringEvent OnMessageReceived = null;
+	public UnityStringEvent OnMessageReceived = new UnityStringEvent();
+	public UnityStringEvent OnError = new UnityStringEvent();
 
 	[Tooltip("Turn this on if you want to manually poll messages instead of using the above events.")]
 	public bool ManuallyPollMessages = false;
 	
 
-	protected AbstractSerialThread serialThread;
+	public AbstractSerialThread SerialThread { get; private set; }
 
 	void OnEnable()
 	{
@@ -68,23 +69,28 @@ public class SerialController : MonoBehaviour
 
 	public void Init()
 	{
-		serialThread = new SerialThread(portName,
-										baudRate,
-										reconnectionDelay,
-										maxUnreadMessages,
-										true);
+		SerialThread = new SerialThread(
+			new System.IO.Ports.SerialPort {
+				PortName = portName,
+				BaudRate = baudRate,
+				ReadTimeout = 10,
+				WriteTimeout = 10
+			},
+			(msgReceivedObj) => { OnMessageReceived.Invoke((string)msgReceivedObj); },
+			OnConnected.Invoke,
+			OnDisconnected.Invoke,
+			OnError.Invoke,
+			delayBeforeReconnecting: reconnectionDelay,
+			maxUnreadMessages: maxUnreadMessages, 
+			manuallyPollMessages: ManuallyPollMessages);
 	}
 
 	public void Init(
 		AbstractSerialThread serialThread,
-		bool manuallyPollMessages,
-		UnityStringEvent onMessageRecieved = null,
-		UnityEvent onConnected = null, UnityEvent onDisconnected = null)
+		bool manuallyPollMessages)
 	{
+		SerialThread = serialThread;
 		ManuallyPollMessages = manuallyPollMessages;
-		OnMessageReceived = onMessageRecieved;
-		OnConnected = onConnected;
-		OnDisconnected = onDisconnected;
 	}
 
 	void OnDisable()
@@ -94,85 +100,39 @@ public class SerialController : MonoBehaviour
 
 	public void Close()
 	{
-		// If there is a user-defined tear-down function, execute it before
-		// closing the underlying COM port.
-		if (userDefinedTearDownFunction != null)
-			userDefinedTearDownFunction();
-
 		// The serialThread reference should never be null at this point,
 		// unless an Exception happened in the OnEnable(), in which case I've
 		// no idea what face Unity will make.
-		if (serialThread != null)
+		if (SerialThread != null)
 		{
-			serialThread.ShutDown();
-			serialThread = null;
+			SerialThread.ShutDown();
 		}
 	}
 
-	// ------------------------------------------------------------------------
-	// Polls messages from the queue that the SerialThread object keeps. Once a
-	// message has been polled it is removed from the queue. There are some
-	// special messages that mark the start/end of the communication with the
-	// device.
-	// ------------------------------------------------------------------------
-	void Update()
-	{
-		if (ManuallyPollMessages)
-			return;
+	
 
-		// Read the next message from the queue
-		string message = (string)serialThread.ReadMessage();
-		if (!string.IsNullOrEmpty(message))
-			return;
-
-		// Check if the message is plain data or a connect/disconnect event.
-		if (ReferenceEquals(message, AbstractSerialThread.SERIAL_DEVICE_CONNECTED) &&
-			OnConnected != null)
-		{
-			OnConnected.Invoke();
-		}
-		else if (ReferenceEquals(message, AbstractSerialThread.SERIAL_DEVICE_DISCONNECTED) &&
-			OnDisconnected != null)
-		{
-			OnDisconnected.Invoke();
-		}
-		else if (OnMessageReceived != null)
-		{
-			OnMessageReceived.Invoke(message);
-		}
-    }
-
-    // ------------------------------------------------------------------------
-    // Returns a new unread message from the serial device. You only need to
-    // call this if you don't provide a message listener.
-    // ------------------------------------------------------------------------
+    /// <summary>
+	/// Manual read option if you don't provide an OnMessageReceived Listener.
+	/// </summary>
+	/// <returns>incoming messag as string</returns>
     public string ReadSerialMessage()
     {
         // Read the next message from the queue
-        return (string)serialThread.ReadMessage();
+        return (string)SerialThread.ReadMessage();
     }
 
-    // ------------------------------------------------------------------------
-    // Puts a message in the outgoing queue. The thread object will send the
-    // message to the serial device when it considers it's appropriate.
-    // ------------------------------------------------------------------------
-    public void SendSerialMessage(string message, bool appendNewLine = true, string newLine = "\n")
+	/// <summary>
+	/// Puts a message in the outgoing queue. The thread object will send the
+	/// message to the serial device when it considers it's appropriate.
+	/// </summary>
+	/// <param name="message"></param>
+	/// <param name="appendNewLine"></param>
+	/// <param name="newLine"></param>
+	public void SendSerialMessage(string message, bool appendNewLine = true, string newLine = "\n")
     {
 		if (appendNewLine)
 			message = message + newLine;
 
-        serialThread.SendMessage(message);
+        SerialThread.SendMessage(message);
     }
-
-    // ------------------------------------------------------------------------
-    // Executes a user-defined function before Unity closes the COM port, so
-    // the user can send some tear-down message to the hardware reliably.
-    // ------------------------------------------------------------------------
-    public delegate void TearDownFunction();
-    private TearDownFunction userDefinedTearDownFunction;
-    public void SetTearDownFunction(TearDownFunction userFunction)
-    {
-        userDefinedTearDownFunction = userFunction;
-    }
-
 }

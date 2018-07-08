@@ -21,7 +21,7 @@ public class SampleTearDown : MonoBehaviour
     {
         serialController = GameObject.Find("SerialController").GetComponent<SerialController>();
 
-        serialController.SetTearDownFunction(lightsShutdown);
+        //serialController.SetTearDownFunction(lightsShutdown);
 
         Debug.Log("Press 1 or 2 to execute some actions");
     }
@@ -58,12 +58,14 @@ public class SampleTearDown : MonoBehaviour
             return;
 
         // Check if the message is plain data or a connect/disconnect event.
+		/*
         if (ReferenceEquals(message, AbstractSerialThread.SERIAL_DEVICE_CONNECTED))
             Debug.Log("Connection established");
         else if (ReferenceEquals(message, AbstractSerialThread.SERIAL_DEVICE_DISCONNECTED))
             Debug.Log("Connection attempt failed or disconnection detected");
         else
             Debug.Log("Message arrived: " + message);
+			*/
     }
 
     // Tear-down function for the hardware at the other side of the COM port

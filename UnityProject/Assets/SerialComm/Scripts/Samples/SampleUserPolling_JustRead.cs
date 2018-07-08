@@ -31,11 +31,13 @@ public class SampleUserPolling_JustRead : MonoBehaviour
             return;
 
         // Check if the message is plain data or a connect/disconnect event.
+		/*
         if (ReferenceEquals(message, AbstractSerialThread.SERIAL_DEVICE_CONNECTED))
             Debug.Log("Connection established");
         else if (ReferenceEquals(message, AbstractSerialThread.SERIAL_DEVICE_DISCONNECTED))
             Debug.Log("Connection attempt failed or disconnection detected");
         else
             Debug.Log("Message arrived: " + message);
+			*/
     }
 }
