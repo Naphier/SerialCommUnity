@@ -9,6 +9,8 @@ public class TerminalLineUi
 
 	public ScrollRect scrollRect;
 
+	public Toggle autoScroll;
+
 	public void AddLine(string line)
 	{
 		var newLine = GameObject.Instantiate(linePrefab, linePrefab.transform.parent);

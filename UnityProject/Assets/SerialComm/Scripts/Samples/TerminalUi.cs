@@ -100,7 +100,7 @@ namespace UnitySerialPort
 							if (!string.IsNullOrEmpty(msg))
 							{
 								receivedTerminal.AddLine(msg);
-								receivedTerminal.scrollRect.verticalNormalizedPosition = 0;
+								StartCoroutine(ScrollTerminal(receivedTerminal));
 							}
 						},
 						serialController.OnConnected.Invoke,
@@ -144,7 +144,7 @@ namespace UnitySerialPort
 					sentTerminal.AddLine(sendInputField.text);
 					sendInputField.Select();
 					sendInputField.ActivateInputField();
-					StartCoroutine(ScrollSentterminal());
+					StartCoroutine(ScrollTerminal(sentTerminal));
 				}
 			});
 		}
@@ -158,11 +158,14 @@ namespace UnitySerialPort
 			}
 		}
 
-		IEnumerator ScrollSentterminal()
+		IEnumerator ScrollTerminal(TerminalLineUi terminalLineUi)
 		{
+			if (!terminalLineUi.autoScroll.isOn)
+				yield break;
+
 			yield return new WaitForEndOfFrame();
 
-			sentTerminal.scrollRect.verticalNormalizedPosition = 0;
+			terminalLineUi.scrollRect.verticalNormalizedPosition = 0;
 		}
 
 		void SetConnectButtonStateConnected()

@@ -73,8 +73,8 @@ public class SerialController : MonoBehaviour
 			new System.IO.Ports.SerialPort {
 				PortName = portName,
 				BaudRate = baudRate,
-				ReadTimeout = 10,
-				WriteTimeout = 10
+				ReadTimeout = 1,
+				WriteTimeout = 1
 			},
 			(msgReceivedObj) => { OnMessageReceived.Invoke((string)msgReceivedObj); },
 			OnConnected.Invoke,
