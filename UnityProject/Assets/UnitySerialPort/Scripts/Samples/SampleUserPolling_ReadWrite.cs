@@ -12,57 +12,60 @@ using System.Collections;
 /**
  * Sample for reading using polling by yourself, and writing too.
  */
-public class SampleUserPolling_ReadWrite : MonoBehaviour
+namespace UnitySerialPort
 {
-    public SerialController serialController;
+	public class SampleUserPolling_ReadWrite : MonoBehaviour
+	{
+		public SerialController serialController;
 
-    // Initialization
-    void Start()
-    {
-        serialController = GameObject.Find("SerialController").GetComponent<SerialController>();
+		// Initialization
+		void Start()
+		{
+			serialController = GameObject.Find("SerialController").GetComponent<SerialController>();
 
-        Debug.Log("Press A or Z to execute some actions");
-    }
+			Debug.Log("Press A or Z to execute some actions");
+		}
 
-    // Executed each frame
-    void Update()
-    {
-        //---------------------------------------------------------------------
-        // Send data
-        //---------------------------------------------------------------------
+		// Executed each frame
+		void Update()
+		{
+			//---------------------------------------------------------------------
+			// Send data
+			//---------------------------------------------------------------------
 
-        // If you press one of these keys send it to the serial device. A
-        // sample serial device that accepts this input is given in the README.
-        if (Input.GetKeyDown(KeyCode.A))
-        {
-            Debug.Log("Sending A");
-            serialController.SendSerialMessage("A");
-        }
+			// If you press one of these keys send it to the serial device. A
+			// sample serial device that accepts this input is given in the README.
+			if (Input.GetKeyDown(KeyCode.A))
+			{
+				Debug.Log("Sending A");
+				serialController.SendSerialMessage("A");
+			}
 
-        if (Input.GetKeyDown(KeyCode.Z))
-        {
-            Debug.Log("Sending Z");
-            serialController.SendSerialMessage("Z");
-        }
+			if (Input.GetKeyDown(KeyCode.Z))
+			{
+				Debug.Log("Sending Z");
+				serialController.SendSerialMessage("Z");
+			}
 
 
-        //---------------------------------------------------------------------
-        // Receive data
-        //---------------------------------------------------------------------
+			//---------------------------------------------------------------------
+			// Receive data
+			//---------------------------------------------------------------------
 
-        string message = serialController.ReadSerialMessage();
+			string message = serialController.ReadSerialMessage();
 
-        if (message == null)
-            return;
+			if (message == null)
+				return;
 
-        // Check if the message is plain data or a connect/disconnect event.
-		/*
-        if (ReferenceEquals(message, AbstractSerialThread.SERIAL_DEVICE_CONNECTED))
-            Debug.Log("Connection established");
-        else if (ReferenceEquals(message, AbstractSerialThread.SERIAL_DEVICE_DISCONNECTED))
-            Debug.Log("Connection attempt failed or disconnection detected");
-        else
-            Debug.Log("Message arrived: " + message);
-			*/
-    }
+			// Check if the message is plain data or a connect/disconnect event.
+			/*
+			if (ReferenceEquals(message, AbstractSerialThread.SERIAL_DEVICE_CONNECTED))
+				Debug.Log("Connection established");
+			else if (ReferenceEquals(message, AbstractSerialThread.SERIAL_DEVICE_DISCONNECTED))
+				Debug.Log("Connection attempt failed or disconnection detected");
+			else
+				Debug.Log("Message arrived: " + message);
+				*/
+		}
+	}
 }
