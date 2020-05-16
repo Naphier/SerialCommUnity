@@ -38,6 +38,32 @@ namespace UnitySerialPort
 			string received = serialPort.ReadLine();
 			BytesPerSecondReceived += (uint)(received.Length * sizeof(System.Char));
 			return received;
+			
+			/*
+			byte[] data = new byte[1024];
+			serialPort.Read(data, 0, data.Length);
+
+			int end = 0;
+			for (int i = 0; i < data.Length; i++)
+			{
+				if (data[i] == 0)
+				{
+					end = i - 1;
+					break;
+				}
+			}
+
+			if (end <= 0)
+			{
+				return null;
+			}
+
+			byte[] output = new byte[end];
+			System.Array.Copy(data, output, end);
+			serialPort.DiscardInBuffer();
+
+			return System.Text.Encoding.Default.GetString(output);
+			*/
 		}
 
 		protected override void SendToWire(object message, SerialPort serialPort)

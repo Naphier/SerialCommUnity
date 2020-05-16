@@ -92,8 +92,9 @@ namespace UnitySerialPort
 						{
 							PortName = selectedComPort,
 							BaudRate = selectedBaudRate,
-							WriteTimeout = 1,
-							ReadTimeout = 1
+							WriteTimeout = 10,
+							ReadTimeout = 10,
+							NewLine = "\r"
 						},
 						(obj) => {
 							string msg = (string)obj;
